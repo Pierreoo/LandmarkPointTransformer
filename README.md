@@ -11,16 +11,14 @@ Available for download via [KeyboneNetCross](https://drive.google.com/drive/fold
 Place the content under the `data` directory.
 
 ### Dog Femur Dataset
-This dataset includes 14 models of dog femurs from different breeds and sizes (7 left, 7 right) under `FBD`.  
+This dataset, introduced in this work, includes 14 models of dog femurs from different breeds and sizes (7 left, 7 right) under `FBD`.  
 With `mesh` and `pcds` representations, each model includes 11 anatomical landmark `annotations`.
-
-Introduced in this work, shared under [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
 ### Human Femur Dataset
 This dataset includes 20 models of human femurs from different subjects (10 left, 10 right) under `FBH`.  
 With `mesh` and `pcds` representations, each model includes 22 anatomical landmark `annotations`.
 
-The representations are derived from the [VSDFullBodyBoneModels](https://github.com/RWTHmediTEC/VSDFullBodyBoneModels) dataset by RWTHmediTEC, shared under [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+The representations are derived from the [VSDFullBodyBoneModels](https://github.com/RWTHmediTEC/VSDFullBodyBoneModels) dataset by RWTHmediTEC.
 
 
 ## Pre-trained model
@@ -29,22 +27,17 @@ Place the content under the `exp/keybonenetcross` directory.
 
 ## Quick Start
 
-To clone LmPT with its adapted Pointcept submodule:
-```bash
-git clone --recursive https://github.com/Pierreoo/LandmarkPointTransformer.git
-```
-
 ### Training
 
 **Train from scratch** using a configuration file from `configs`, which will create an experiment folder in `exp` with training outputs.
 
 ```
-sh Pointcept/scripts/train.sh -p ${INTERPRETER_PATH} -g ${NUM_GPU} -d ${DATASET_NAME} -c ${CONFIG_NAME} -n ${EXP_NAME}
+sh scripts/train.sh -p ${INTERPRETER_PATH} -g ${NUM_GPU} -d ${DATASET_NAME} -c ${CONFIG_NAME} -n ${EXP_NAME}
 ```
 
 For example:
 ```bash
-sh Pointcept/scripts/train.sh -p python -g 1 -d keybonenetcross -c lfv2 -n scratch
+sh scripts/train.sh -p python -g 1 -d keybonenetcross -c lfv2 -n scratch
 ```
 
 
@@ -52,24 +45,23 @@ sh Pointcept/scripts/train.sh -p python -g 1 -d keybonenetcross -c lfv2 -n scrat
 
 **Test a model** using the experiment name and corresponding config from a trained checkpoint.
 ```
-sh Pointcept/scripts/test.sh -p ${INTERPRETER_PATH} -g ${NUM_GPU} -d ${DATASET_NAME} -n ${EXP_NAME} -w ${CHECKPOINT_NAME}
+sh scripts/test.sh -p ${INTERPRETER_PATH} -g ${NUM_GPU} -d ${DATASET_NAME} -n ${EXP_NAME} -w ${CHECKPOINT_NAME}
 ```
 
 For example, to test the pre-trained LmPT-v2 model:
 ```bash
-sh Pointcept/scripts/test.sh -p python -g 1 -d keybonenetcross -n lfv_cross -w model_best
+sh scripts/test.sh -p python -g 1 -d keybonenetcross -n lfv_cross -w model_best
 ```
 
 
 ## Licenses
 
-[![Code License: BSD-2-Clause](https://img.shields.io/badge/Code%20License-BSD--2--Clause-blue.svg)](LICENSE)
-[![Dataset License: CC BY-NC-SA 4.0](https://img.shields.io/badge/Dataset%20License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
-
+[![LmPT Code License: BSD-2-Clause](https://img.shields.io/badge/LmPT%20Code%20License-BSD--2--Clause-blue.svg)](LICENSE) [![Pointcept Code License: MIT](https://img.shields.io/badge/Pointcept%20Code%20License-MIT-green.svg)](LICENSE_Pointcept)  
+[![LmPT Dataset License: CC BY-NC-SA 4.0](https://img.shields.io/badge/LmPT%20Dataset%20License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/) [![VSDFullBodyBoneModels Dataset License: CC BY-NC-SA 4.0](https://img.shields.io/badge/VSDFullBodyBoneModels%20Dataset%20License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 ## Citation
 If you find *LmPT* useful to your research, please consider citing:
-```
+```bibtex
 @misc{bastico2026lmptconditionalpointtransformer,
       title={LmPT: Conditional Point Transformer for Anatomical Landmark Detection on 3D Point Clouds}, 
       author={Matteo Bastico and Pierre Onghena and David Ryckelynck and Beatriz Marcotegui and Santiago Velasco-Forero and Laurent Corté and Caroline Robine--Decourcelle and Etienne Decencière},
