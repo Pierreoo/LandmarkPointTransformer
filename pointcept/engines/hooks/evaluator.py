@@ -8,12 +8,17 @@ Please cite our work if the code is helpful to you.
 import numpy as np
 import wandb
 import torch
+import torch.nn.functional as F
 import torch.distributed as dist
 import pointops
 from uuid import uuid4
 
 import pointcept.utils.comm as comm
 from pointcept.utils.misc import intersection_and_union_gpu
+
+from pointcept.datasets.utils import load_geodesics
+from pointcept.engines.metrics.keypointnet import eval_pck
+from pointcept.models.utils import offset2bincount
 
 from .default import HookBase
 from .builder import HOOKS
@@ -642,3 +647,129 @@ class InsSegEvaluator(HookBase):
             )
             self.trainer.comm_info["current_metric_value"] = all_ap_50  # save for saver
             self.trainer.comm_info["current_metric_name"] = "AP50"  # save for saver
+
+
+@HOOKS.register_module()
+class CorrespondenceEvaluator(HookBase):
+    def __init__(self, pck_alpha=0.7):
+        self.pck_alpha = pck_alpha
+
+    def after_epoch(self):
+        if self.trainer.cfg.evaluate:
+            self.eval()
+
+    def eval(self):
+        self.trainer.logger.info(">>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>")
+        self.trainer.model.eval()
+
+        for i, input_dict in enumerate(self.trainer.val_loader):
+            for key in input_dict.keys():
+                if isinstance(input_dict[key], torch.Tensor):
+                    input_dict[key] = input_dict[key].cuda(non_blocking=True)
+            with torch.no_grad():
+                output_dict = self.trainer.model(input_dict)
+            kp_logits = output_dict["kp_logits"]
+            loss = output_dict["loss"]
+
+            # PCK
+            _offset = torch.nn.functional.pad(input_dict["offset"], (1, 0))
+            kp_indexes, kp_index_offset = input_dict.pop("kp_index")
+            _kp_index_offset = torch.nn.functional.pad(kp_index_offset, (1, 0))
+            n_keypoints = kp_logits.shape[-1]
+            kp_logits = torch.split(kp_logits, offset2bincount(input_dict["offset"]).tolist())
+            coord = torch.split(input_dict["coord"], offset2bincount(input_dict["offset"]).tolist())
+            # geodesics = torch.split(input_dict["geodesics"], offset2bincount(input_dict["offset"]).tolist())
+
+            # consider rotational symmetry and choose the best target using kp_logits
+            # https://github.com/qq456cvb/KeypointNet/blob/master/benchmark_scripts/test.py
+            pred_kps = []
+            gt_kps = []
+            for j in range(len(input_dict["offset"])):
+                # Pred KP
+                pred_kps.append(
+                    torch.argmax(kp_logits[j], dim=0)
+                )
+                # GT Keypoints
+                kp_index = kp_indexes[
+                           _kp_index_offset[j]:_kp_index_offset[j + 1]]  # This can be done with split before the loop
+                kp_index = [kp_index[n:n + n_keypoints] for n in range(0, len(kp_index), n_keypoints)]
+                loss_rot = []
+                for rot_kp_index in kp_index:
+                    loss_rot.append(
+                        F.cross_entropy(
+                            kp_logits[j].unsqueeze(0),
+                            rot_kp_index.unsqueeze(0).long().cuda(),
+                            ignore_index=-1
+                        )
+                    )
+                gt_kps.append(kp_index[torch.argmin(torch.stack(loss_rot))])
+
+            # Compute PCK
+            # geos = np.stack([geo_dists[data_name.split('-')[1]] for data_name in input_dict["name"]])
+            geodesics = (load_geodesics
+                         (input_dict["name"],
+                          self.trainer.val_loader.dataset.data_root,
+                          False,
+                          task='correspondence',
+                          coord_list=[input_dict["coord"].cpu().numpy()]
+                          )
+                         )
+            pck = eval_pck(
+                torch.stack(coord).cpu().numpy(),
+                torch.stack(gt_kps).cpu().numpy(),
+                torch.stack(pred_kps).cpu().numpy(),
+                np.stack(list(geodesics.values())),
+            )
+
+            if comm.get_world_size() > 1:
+                # Perform the reduction
+                pck = torch.tensor(pck, device="cuda")
+                dist.all_reduce(pck)
+                pck = pck / comm.get_world_size()
+                pck = pck.tolist()
+
+            for pck_i, corr in enumerate(pck):
+                self.trainer.storage.put_scalar('PCK-{:.2f}'.format(pck_i * 0.01), corr)
+
+            self.trainer.storage.put_scalar("val_loss", loss.item())
+            info = "Test: [{iter}/{max_iter}] ".format(
+                iter=i + 1, max_iter=len(self.trainer.val_loader)
+            )
+            self.trainer.logger.info(
+                info
+                + "Loss {loss:.4f}".format(
+                    iter=i + 1, max_iter=len(self.trainer.val_loader), loss=loss.item()
+                )
+            )
+
+        loss_avg = self.trainer.storage.history("val_loss").avg
+
+        for pck_i in range(11):
+            value = self.trainer.storage.history('PCK-{:.2f}'.format(pck_i * 0.01)).avg
+            self.trainer.logger.info(
+                "Val result: PCK-{:.2f} {:.4f}.".format(
+                    pck_i * 0.01, value
+                )
+            )
+
+        current_epoch = self.trainer.epoch + 1
+        if self.trainer.writer is not None:
+            self.trainer.writer.add_scalar("val/loss", loss_avg, current_epoch)
+            for pck_i in range(11):
+                value = self.trainer.storage.history('PCK-{:.2f}'.format(pck_i * 0.01)).avg
+                self.trainer.writer.add_scalar("val/PCK-{:.2f}".format(pck_i * 0.01), value, current_epoch)
+
+        self.trainer.logger.info("<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<")
+        current_metric_value = self.pck_alpha * self.trainer.storage.history('PCK-0.01').avg
+        if self.pck_alpha < 1.0:
+            for pck_i in range(2, 11):
+                current_metric_value += ((1 - self.pck_alpha) / len(range(2, 11)) *
+                                         self.trainer.storage.history('PCK-{:.2f}'.format(pck_i * 0.01)).avg)
+
+        self.trainer.comm_info["current_metric_value"] = current_metric_value  # save for saver
+        self.trainer.comm_info["current_metric_name"] = "Weighted-PCK"  # save for saver
+
+    def after_train(self):
+        self.trainer.logger.info(
+            "Best {}: {:.4f}".format("Weighted-PCK", self.trainer.best_metric_value)
+        )

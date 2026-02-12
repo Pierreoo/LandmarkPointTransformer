@@ -15,6 +15,7 @@ import numpy as np
 import torch
 from torchvision import transforms
 import copy
+from sklearn.decomposition import PCA
 from collections.abc import Sequence, Mapping
 from pointcept.utils.registry import Registry
 
@@ -328,20 +329,16 @@ class RandomScale(object):
 
 @TRANSFORMS.register_module()
 class RandomFlip(object):
-    def __init__(self, p=0.5):
+    def __init__(self, p=0.5, dim=0):
         self.p = p
+        self.dim = dim
 
     def __call__(self, data_dict):
         if np.random.rand() < self.p:
             if "coord" in data_dict.keys():
-                data_dict["coord"][:, 0] = -data_dict["coord"][:, 0]
+                data_dict["coord"][:, self.dim] = -data_dict["coord"][:, self.dim]
             if "normal" in data_dict.keys():
-                data_dict["normal"][:, 0] = -data_dict["normal"][:, 0]
-        if np.random.rand() < self.p:
-            if "coord" in data_dict.keys():
-                data_dict["coord"][:, 1] = -data_dict["coord"][:, 1]
-            if "normal" in data_dict.keys():
-                data_dict["normal"][:, 1] = -data_dict["normal"][:, 1]
+                data_dict["normal"][:, self.dim] = -data_dict["normal"][:, self.dim]
         return data_dict
 
 
@@ -1500,3 +1497,23 @@ class ImgAugmentation(object):
         correspondence[mask] -= np.array(self.crop_start)
         point["correspondence"] = correspondence.reshape(correspondence_shape)
         return point
+
+@TRANSFORMS.register_module()
+class PCATransform(object):
+    def __init__(self, n_components=3):
+        self.pca = PCA(n_components=n_components)
+
+    def __call__(self, data_dict):
+        if "coord" in data_dict:
+            coord = self.pca.fit_transform(data_dict["coord"])
+            data_dict["coord"] = coord
+
+        # Transform normals if present
+        if "normal" in data_dict:
+            rotation = self.pca.components_  # shape: [n_components, original_dim]
+            # Apply only the rotation part to normals
+            # normals shape: [N, 3], rotation.T shape: [3, 3]
+            normals = data_dict["normal"]
+            data_dict["normal"] = normals @ rotation.T  # Rotate normals
+
+        return data_dict

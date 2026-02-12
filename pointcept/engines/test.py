@@ -29,6 +29,10 @@ from pointcept.utils.misc import (
     make_dirs,
 )
 
+from pointcept.datasets.utils import load_geodesics
+from pointcept.engines.metrics.keypointnet import eval_pck
+from collections import defaultdict
+
 try:
     import pointops
 except:
@@ -1322,3 +1326,123 @@ class InsSegTester(TesterBase):
     def collate_fn(batch):
         # Restrict to bs 1
         return batch[0]
+
+
+@TESTERS.register_module()
+class CorrespondenceTester(TesterBase):
+
+    def test(self):
+        assert self.test_loader.batch_size == 1
+        logger = get_root_logger()
+        logger.info(">>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>")
+
+        batch_time = AverageMeter()
+        pck_meter = AverageMeter()
+        self.model.eval()
+
+        save_path = os.path.join(self.cfg.save_path, "result")
+        make_dirs(save_path)
+
+        comm.synchronize()
+        record = {}
+        for idx, input_dict in enumerate(self.test_loader):
+            end = time.time()
+            input_dict = input_dict[0]
+            # data_name = input_dict.pop("name")
+            data_name = input_dict["name"]
+            kp_index = input_dict.pop("kp_index")[0]
+            pred_index_save_path = os.path.join(save_path, "{}_pred_index.npy".format(data_name))
+
+            for key in input_dict.keys():
+                if isinstance(input_dict[key], torch.Tensor):
+                    input_dict[key] = input_dict[key].cuda(non_blocking=True)
+
+            with torch.no_grad():
+                output_dict = self.model(input_dict)
+
+            kp_logits = output_dict["kp_logits"]
+            pred_index = torch.argmax(kp_logits, dim=0)
+
+            np.save(pred_index_save_path, pred_index.cpu().numpy())
+
+            # consider rotational symmetry and choose the best target using kp_logits
+            # https://github.com/qq456cvb/KeypointNet/blob/master/benchmark_scripts/test.py
+            loss_rot = []
+            kp_index = [kp_index[n:n + kp_logits.shape[1]] for n in range(0, len(kp_index), kp_logits.shape[1])]
+            for rot_kp_index in kp_index:
+                loss_rot.append(
+                    F.cross_entropy(
+                        kp_logits.unsqueeze(0),
+                        rot_kp_index.unsqueeze(0).long().cuda(),
+                        ignore_index=-1
+                    )
+                )
+            best_kp_index = kp_index[torch.argmin(torch.stack(loss_rot))]
+            coord = input_dict["coord"]
+            record[data_name] = dict(
+                gt_kp=best_kp_index.cpu().numpy(),
+                pred_kp=pred_index.cpu().numpy(),
+                pc=coord.cpu().numpy()
+            )
+
+            batch_time.update(time.time() - end)
+            logger.info(
+                "Test: {} [{}/{}]-{} "
+                "Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) ".format(
+                    data_name,
+                    idx + 1,
+                    len(self.test_loader),
+                    coord.size()[0],
+                    batch_time=batch_time,
+                )
+            )
+
+        logger.info("Syncing ...")
+        comm.synchronize()
+        record_sync = comm.gather(record, dst=0)
+
+        if comm.is_main_process():
+            record = {}
+            for _ in range(len(record_sync)):
+                r = record_sync.pop()
+                record.update(r)
+                del r
+
+            class_data = defaultdict(lambda: {'pcs': [], 'gt_kps': [], 'pred_kps': [], 'geodesics': []})
+
+            for name, meters in record.items():
+                class_id = name.split('-')[0]
+                class_data[class_id]['pcs'].append(meters["pc"])
+                class_data[class_id]['gt_kps'].append(meters["gt_kp"])
+                class_data[class_id]['pred_kps'].append(meters["pred_kp"])
+                class_data[class_id]['geodesics'].append(
+                    load_geodesics(
+                            [name],
+                            self.test_loader.dataset.data_root,
+                            False,
+                            task='correspondence',
+                            coord_list=[meters["pc"]]
+                        )[name]
+                )
+
+            pcks = {}
+            for class_id, data in class_data.items():
+                pcs = np.stack(data['pcs'])
+                gt_kps = np.stack(data['gt_kps'])
+                pred_kps = np.stack(data['pred_kps'])
+                geos = np.stack(data['geodesics'])
+                pck = eval_pck(pcs, gt_kps, pred_kps, geos)
+
+                for pck_i, corr in enumerate(pck):
+                    pcks.setdefault(pck_i, []).append(corr)
+                    logger.info('Class {} - PCK-{:.2f}: {:.4f}'.format(class_id, pck_i * 0.01, corr * 100))
+
+            for pck_i, corr_list in pcks.items():
+                mean_corr = np.mean(corr_list)
+                logger.info('Mean - PCK-{:.2f}: {:.4f}'.format(pck_i * 0.01, mean_corr * 100))
+
+            logger.info("<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<")
+
+    @staticmethod
+    def collate_fn(batch):
+        return batch
