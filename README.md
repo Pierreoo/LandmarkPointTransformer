@@ -62,13 +62,15 @@ sh scripts/test.sh -p python -g 1 -d keybonenetcross -n lfv_cross -w model_best
 ## Citation
 If you find *LmPT* useful to your research, please consider citing:
 ```bibtex
-@misc{bastico2026lmptconditionalpointtransformer,
-      title={LmPT: Conditional Point Transformer for Anatomical Landmark Detection on 3D Point Clouds}, 
-      author={Matteo Bastico and Pierre Onghena and David Ryckelynck and Beatriz Marcotegui and Santiago Velasco-Forero and Laurent Corté and Caroline Robine--Decourcelle and Etienne Decencière},
-      year={2026},
-      eprint={2602.02808},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2602.02808}, 
+@INPROCEEDINGS{11515617,
+  author={Bastico, Matteo and Onghena, Pierre and Ryckelynck, David and Marcotegui, Beatriz and Velasco-Forero, Santiago and Corté, Laurent and Robine-Decourcelle, Caroline and Decencière, Etienne},
+  booktitle={2026 IEEE 23rd International Symposium on Biomedical Imaging (ISBI)}, 
+  title={LMPT: Conditional Point Transformer for Anatomical Landmark Detection on 3D Point Clouds}, 
+  year={2026},
+  volume={},
+  number={},
+  pages={1-5},
+  keywords={Modeling;Dogs;Training;Clouds;Printing;Signal detection;Transformers;Conferences;Learning (artificial intelligence);Bones;Femoral bones;Landmark detection;Point cloud;Point transformer},
+  doi={10.1109/ISBI61048.2026.11515617}
 }
 ```
