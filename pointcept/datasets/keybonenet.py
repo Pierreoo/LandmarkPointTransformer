@@ -25,8 +25,8 @@ from .utils import closest_distance_with_batch
 class KeyboneNetDataset(DefaultDataset):
     def __init__(
             self,
-            data_root="data/KeyboneNetPlus",
-            category="FB",
+            data_root="data/KeyboneNetCross",
+            category="all",
             num_points=2048,
             uniform_sampling=True,
             save_record=True,

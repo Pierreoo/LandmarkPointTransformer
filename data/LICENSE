@@ -1,4 +1,16 @@
+KeyboneNetCross dataset
 Copyright (c) 2026, Pierre Onghena and Matteo Bastico
+
+FBD (dog femurs): meshes, point clouds and landmark annotations
+created by the copyright holders above.
+
+FBH (human femurs): adapted from VSDFullBodyBoneModels v2.0 by
+M. C. M. Fischer, RWTH Aachen
+(https://github.com/RWTHmediTEC/VSDFullBodyBoneModels),
+licensed under CC BY-NC-SA 4.0. Changes: point clouds generated from
+the femur meshes.
+Cite: M. C. M. Fischer, Sci. Data 10, 763 (2023),
+https://doi.org/10.1038/s41597-023-02669-z
 
 This dataset is licensed under CC BY-NC-SA 4.0.
 
